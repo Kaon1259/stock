@@ -57,6 +57,10 @@ public class DailyPickService {
         }
 
         List<RecommendedStock> picks = generate();
+        if (picks.size() < 2) {
+            log.warn("[DailyPick] 결과 {}건뿐이라 캐시 저장 스킵 (다음 호출에서 재시도)", picks.size());
+            return picks;
+        }
         try {
             String json = mapper.writeValueAsString(picks);
             dailyPickRepository.save(DailyPick.builder()

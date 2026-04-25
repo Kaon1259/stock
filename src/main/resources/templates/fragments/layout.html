@@ -9,9 +9,50 @@
     <link rel="stylesheet" href="/css/app.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
+    <script>
+    (function pageLoaderHook() {
+        function $loader() { return document.getElementById('pageLoader'); }
+        function show() {
+            const el = $loader(); if (!el) return;
+            el.classList.add('active');
+            el.setAttribute('aria-hidden', 'false');
+        }
+        function hide() {
+            const el = $loader(); if (!el) return;
+            el.classList.remove('active');
+            el.setAttribute('aria-hidden', 'true');
+        }
+        document.addEventListener('click', function(e) {
+            const a = e.target.closest('a[href]');
+            if (!a) return;
+            const href = a.getAttribute('href');
+            if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button === 1) return;
+            if (a.target === '_blank' || a.hasAttribute('download')) return;
+            try {
+                const url = new URL(href, location.origin);
+                if (url.origin !== location.origin) return;
+                if (url.pathname === location.pathname && url.search === location.search) return;
+            } catch (_) { return; }
+            show();
+        });
+        document.addEventListener('submit', function(e) {
+            const f = e.target;
+            if (!f || f.hasAttribute('data-no-loader')) return;
+            const method = (f.method || 'get').toLowerCase();
+            if (method === 'post' || method === 'put' || method === 'delete') show();
+        });
+        window.addEventListener('pageshow', hide);
+        window.addEventListener('beforeunload', show);
+    })();
+    </script>
 </head>
 
 <nav th:fragment="nav(active)" class="navbar navbar-expand-md navbar-dark bg-dark sticky-top mb-3">
+    <div id="pageLoader" class="page-loader-overlay" aria-hidden="true">
+        <div class="spinner-large"></div>
+        <div class="spinner-text">불러오는 중…</div>
+    </div>
     <div class="container">
         <a class="navbar-brand fw-bold" href="/">📈 KOSPI Watch</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">

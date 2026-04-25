@@ -14,11 +14,9 @@
             <span class="small text-muted">AI 자동 선정</span>
         </div>
         <div class="card-body">
-            <div id="picksLoading">
-                <div class="skeleton mb-2"></div>
-                <div class="skeleton mb-2" style="width: 80%"></div>
-                <div class="skeleton mb-2" style="width: 60%"></div>
-                <div class="text-muted small mt-3 text-center analyzing">AI가 코스피에서 좋은 종목을 고르고 있어요…</div>
+            <div id="picksLoading" class="text-center py-4">
+                <div class="spinner-large mx-auto"></div>
+                <div class="text-muted small mt-3 analyzing">AI가 코스피에서 좋은 종목을 고르고 있어요…</div>
             </div>
             <div id="picksContent"></div>
             <div id="picksError" class="text-danger small" style="display:none"></div>

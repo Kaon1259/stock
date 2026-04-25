@@ -5,10 +5,12 @@ import com.stock.domain.NewsItem;
 import com.stock.domain.PriceHistory;
 import com.stock.domain.Stock;
 import com.stock.domain.StockConsensus;
+import com.stock.repository.DailyPickRepository;
 import com.stock.repository.NewsItemRepository;
 import com.stock.repository.PriceHistoryRepository;
 import com.stock.repository.StockConsensusRepository;
 import com.stock.repository.StockRepository;
+import com.stock.service.DailyPickService;
 import com.stock.service.LiveDataService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,8 @@ public class AdminController {
     private final NewsItemRepository newsItemRepository;
     private final LiveDataService liveDataService;
     private final NaverFinanceClient naverClient;
+    private final DailyPickRepository dailyPickRepository;
+    private final DailyPickService dailyPickService;
 
     @Value("${admin.token:dev-only-token}")
     private String adminToken;
@@ -204,6 +208,21 @@ public class AdminController {
         log.info("[Admin] refresh-missing 완료 ({}초): {}/{} 성공",
                 (System.currentTimeMillis() - startTs) / 1000, ok, targets.size());
         return summary;
+    }
+
+    @PostMapping("/refresh-picks")
+    public Map<String, Object> refreshPicks(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        verify(token);
+        log.info("[Admin] refresh-picks 호출됨");
+        java.time.LocalDate today = java.time.LocalDate.now();
+        dailyPickRepository.findByPickDate(today).ifPresent(dailyPickRepository::delete);
+        dailyPickRepository.flush();
+
+        List<com.stock.dto.RecommendedStock> picks = dailyPickService.getTodaysPicks();
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("count", picks.size());
+        r.put("picks", picks);
+        return r;
     }
 
     @GetMapping("/db-stats")
