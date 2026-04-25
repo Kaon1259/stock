@@ -13,6 +13,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
@@ -23,6 +25,26 @@ public class NaverFinanceClient {
     private static final DateTimeFormatter NAVER_DATETIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    private final Map<String, String> lastErrors = new ConcurrentHashMap<>();
+
+    public String getLastError(String key) {
+        return lastErrors.get(key);
+    }
+
+    private static String errorChain(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        Throwable cur = e;
+        int depth = 0;
+        while (cur != null && depth++ < 5) {
+            if (sb.length() > 0) sb.append(" -> ");
+            sb.append(cur.getClass().getSimpleName());
+            if (cur.getMessage() != null) sb.append(": ").append(cur.getMessage());
+            if (cur.getCause() == cur) break;
+            cur = cur.getCause();
+        }
+        return sb.toString();
+    }
 
     private final WebClient mClient = WebClient.builder()
             .baseUrl("https://m.stock.naver.com")
@@ -47,8 +69,9 @@ public class NaverFinanceClient {
                     .uri("/api/stock/{code}/integration", code)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(15))
+                    .timeout(Duration.ofSeconds(30))
                     .block();
+            lastErrors.remove("integration:" + code);
             JsonNode root = mapper.readTree(body);
             String stockName = root.path("stockName").asText("");
 
@@ -104,7 +127,9 @@ public class NaverFinanceClient {
 
             return new IntegrationResponse(snap, consensus, researches);
         } catch (Exception e) {
-            log.warn("[Naver] integration 실패 {}: {}", code, e.getMessage());
+            String chain = errorChain(e);
+            lastErrors.put("integration:" + code, chain);
+            log.warn("[Naver] integration 실패 {}: {}", code, chain);
             return null;
         }
     }
@@ -135,40 +160,53 @@ public class NaverFinanceClient {
     }
 
     public List<DailyOhlcv> fetchDailyHistory(String code, LocalDate from, LocalDate to) {
-        try {
-            String start = from.atStartOfDay().format(NAVER_DATETIME);
-            String end = to.atTime(23, 59, 59).format(NAVER_DATETIME);
+        String start = from.atStartOfDay().format(NAVER_DATETIME);
+        String end = to.atTime(23, 59, 59).format(NAVER_DATETIME);
 
-            String body = apiClient.get()
-                    .uri(uri -> uri.path("/chart/domestic/item/{code}/day")
-                            .queryParam("startDateTime", start)
-                            .queryParam("endDateTime", end)
-                            .build(code))
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(Duration.ofSeconds(20))
-                    .block();
+        Exception lastEx = null;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                String body = apiClient.get()
+                        .uri(uri -> uri.path("/chart/domestic/item/{code}/day")
+                                .queryParam("startDateTime", start)
+                                .queryParam("endDateTime", end)
+                                .build(code))
+                        .retrieve()
+                        .bodyToMono(String.class)
+                        .timeout(Duration.ofSeconds(45))
+                        .block();
 
-            JsonNode arr = mapper.readTree(body);
-            List<DailyOhlcv> rows = new ArrayList<>();
-            for (JsonNode n : arr) {
-                String dateStr = n.path("localDate").asText();
-                if (dateStr.isEmpty()) continue;
-                LocalDate date = LocalDate.parse(dateStr, NAVER_DATE);
-                rows.add(new DailyOhlcv(
-                        date,
-                        Math.round(n.path("openPrice").asDouble(0)),
-                        Math.round(n.path("highPrice").asDouble(0)),
-                        Math.round(n.path("lowPrice").asDouble(0)),
-                        Math.round(n.path("closePrice").asDouble(0)),
-                        n.path("accumulatedTradingVolume").asLong(0)
-                ));
+                JsonNode arr = mapper.readTree(body);
+                List<DailyOhlcv> rows = new ArrayList<>();
+                for (JsonNode n : arr) {
+                    String dateStr = n.path("localDate").asText();
+                    if (dateStr.isEmpty()) continue;
+                    LocalDate date = LocalDate.parse(dateStr, NAVER_DATE);
+                    rows.add(new DailyOhlcv(
+                            date,
+                            Math.round(n.path("openPrice").asDouble(0)),
+                            Math.round(n.path("highPrice").asDouble(0)),
+                            Math.round(n.path("lowPrice").asDouble(0)),
+                            Math.round(n.path("closePrice").asDouble(0)),
+                            n.path("accumulatedTradingVolume").asLong(0)
+                    ));
+                }
+                lastErrors.remove("daily:" + code);
+                if (attempt > 1) {
+                    log.info("[Naver] daily history {} 재시도 성공 ({}건)", code, rows.size());
+                }
+                return rows;
+            } catch (Exception e) {
+                lastEx = e;
+                String chain = errorChain(e);
+                lastErrors.put("daily:" + code, chain);
+                log.warn("[Naver] daily history 실패 {} (시도 {}/2): {}", code, attempt, chain);
+                if (attempt < 2) {
+                    try { Thread.sleep(800); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                }
             }
-            return rows;
-        } catch (Exception e) {
-            log.warn("[Naver] daily history 실패 {}: {}", code, e.getMessage());
-            return List.of();
         }
+        return List.of();
     }
 
     private JsonNode findInfo(JsonNode totalInfos, String code) {

@@ -3,6 +3,7 @@ package com.stock.config;
 import com.stock.domain.Stock;
 import com.stock.domain.Stock.AssetType;
 import com.stock.domain.Watchlist;
+import com.stock.repository.PriceHistoryRepository;
 import com.stock.repository.StockRepository;
 import com.stock.repository.WatchlistRepository;
 import com.stock.service.LiveDataService;
@@ -22,6 +23,7 @@ public class DataSeeder {
     private final StockRepository stockRepository;
     private final WatchlistRepository watchlistRepository;
     private final LiveDataService liveDataService;
+    private final PriceHistoryRepository priceHistoryRepository;
 
     @Bean
     ApplicationRunner seedData() {
@@ -73,9 +75,16 @@ public class DataSeeder {
             Thread liveDataLoader = new Thread(() -> {
                 log.info("[LiveData] 백그라운드 초기 적재 시작 — 시세/뉴스/컨센서스 fetch");
                 long startTs = System.currentTimeMillis();
+                int loaded = 0, skipped = 0;
                 for (SeedStock s : seeds) {
                     try {
+                        boolean hasData = !priceHistoryRepository.findByStockCodeOrderByTradeDateAsc(s.code).isEmpty();
+                        if (hasData) {
+                            skipped++;
+                            continue;
+                        }
                         liveDataService.initializeStock(s.code);
+                        loaded++;
                     } catch (Exception e) {
                         log.warn("[LiveData] {} 초기화 실패: {}", s.code, e.getMessage());
                     }
@@ -85,7 +94,8 @@ public class DataSeeder {
                 } catch (Exception e) {
                     log.warn("[LiveData] 매크로 뉴스 실패: {}", e.getMessage());
                 }
-                log.info("[LiveData] 초기 적재 완료 ({}초)", (System.currentTimeMillis() - startTs) / 1000);
+                log.info("[LiveData] 초기 적재 완료 ({}초) — 신규 적재 {}건, 기존 데이터 스킵 {}건",
+                        (System.currentTimeMillis() - startTs) / 1000, loaded, skipped);
             }, "live-data-init");
             liveDataLoader.setDaemon(true);
             liveDataLoader.start();

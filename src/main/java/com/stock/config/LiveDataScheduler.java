@@ -17,7 +17,7 @@ public class LiveDataScheduler {
     private final StockRepository stockRepository;
     private final LiveDataService liveDataService;
 
-    @Scheduled(fixedDelay = 600_000, initialDelay = 600_000)
+    @Scheduled(fixedDelay = 600_000, initialDelay = 1_800_000)
     public void refreshSnapshots() {
         LocalTime now = LocalTime.now();
         if (now.isBefore(LocalTime.of(8, 0)) || now.isAfter(LocalTime.of(18, 0))) {

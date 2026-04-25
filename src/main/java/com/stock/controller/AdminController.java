@@ -1,5 +1,7 @@
 package com.stock.controller;
 
+import com.stock.client.NaverFinanceClient;
+import com.stock.domain.NewsItem;
 import com.stock.domain.PriceHistory;
 import com.stock.domain.Stock;
 import com.stock.domain.StockConsensus;
@@ -28,6 +30,7 @@ public class AdminController {
     private final StockConsensusRepository consensusRepository;
     private final NewsItemRepository newsItemRepository;
     private final LiveDataService liveDataService;
+    private final NaverFinanceClient naverClient;
 
     @Value("${admin.token:dev-only-token}")
     private String adminToken;
@@ -100,6 +103,106 @@ public class AdminController {
         summary.put("results", results);
         log.info("[Admin] refresh-all 완료 ({}초): 시세 {}/{}, 뉴스 {}/{}, 컨센서스 {}/{}",
                 elapsedMs / 1000, priceOk, stocks.size(), newsOk, stocks.size(), consensusOk, stocks.size());
+        return summary;
+    }
+
+    @PostMapping("/refresh/{code}")
+    public Map<String, Object> refreshOne(@PathVariable String code,
+                                           @RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        verify(token);
+        Stock stock = stockRepository.findById(code).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "종목 없음: " + code));
+        log.info("[Admin] refresh/{} 호출됨", code);
+
+        long startTs = System.currentTimeMillis();
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("code", stock.getCode());
+        r.put("name", stock.getName());
+        r.put("type", stock.getType().name());
+
+        long t0 = System.currentTimeMillis();
+        try {
+            liveDataService.loadFullHistory(code);
+            long count = priceHistoryRepository.findByStockCodeOrderByTradeDateAsc(code).size();
+            r.put("priceRows", count);
+            if (count == 0) {
+                String fetchErr = naverClient.getLastError("daily:" + code);
+                if (fetchErr != null) r.put("priceFetchError", fetchErr);
+            }
+        } catch (Exception e) {
+            r.put("priceError", e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+        r.put("priceMs", System.currentTimeMillis() - t0);
+
+        long t1 = System.currentTimeMillis();
+        try {
+            liveDataService.refreshStockNews(code);
+            long c = newsItemRepository.findTop10ByScopeAndScopeKeyOrderByPublishedAtDesc(
+                    NewsItem.Scope.STOCK, code).size();
+            r.put("newsCount", c);
+        } catch (Exception e) {
+            r.put("newsError", e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+        r.put("newsMs", System.currentTimeMillis() - t1);
+
+        long t2 = System.currentTimeMillis();
+        try {
+            liveDataService.refreshConsensus(code);
+            Optional<StockConsensus> c = consensusRepository.findByStockCode(code);
+            r.put("hasConsensus", c.isPresent() && c.get().getPriceTargetMean() != null);
+            String integrationErr = naverClient.getLastError("integration:" + code);
+            if (integrationErr != null) r.put("integrationFetchError", integrationErr);
+        } catch (Exception e) {
+            r.put("consensusError", e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+        r.put("consensusMs", System.currentTimeMillis() - t2);
+
+        r.put("totalMs", System.currentTimeMillis() - startTs);
+        return r;
+    }
+
+    @PostMapping("/refresh-missing")
+    public Map<String, Object> refreshMissing(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        verify(token);
+        long startTs = System.currentTimeMillis();
+        log.info("[Admin] refresh-missing 호출됨");
+
+        List<Stock> targets = stockRepository.findAll().stream()
+                .filter(s -> priceHistoryRepository.findByStockCodeOrderByTradeDateAsc(s.getCode()).isEmpty())
+                .toList();
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        int ok = 0, fail = 0;
+        for (Stock stock : targets) {
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("code", stock.getCode());
+            r.put("name", stock.getName());
+            r.put("type", stock.getType().name());
+            try {
+                liveDataService.loadFullHistory(stock.getCode());
+                long count = priceHistoryRepository.findByStockCodeOrderByTradeDateAsc(stock.getCode()).size();
+                r.put("priceRows", count);
+                if (count > 0) ok++;
+                else {
+                    fail++;
+                    String fetchErr = naverClient.getLastError("daily:" + stock.getCode());
+                    if (fetchErr != null) r.put("priceFetchError", fetchErr);
+                }
+            } catch (Exception e) {
+                fail++;
+                r.put("priceError", e.getClass().getSimpleName() + ": " + e.getMessage());
+            }
+            results.add(r);
+        }
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("elapsedSec", (System.currentTimeMillis() - startTs) / 1000);
+        summary.put("targetCount", targets.size());
+        summary.put("ok", ok);
+        summary.put("fail", fail);
+        summary.put("results", results);
+        log.info("[Admin] refresh-missing 완료 ({}초): {}/{} 성공",
+                (System.currentTimeMillis() - startTs) / 1000, ok, targets.size());
         return summary;
     }
 
