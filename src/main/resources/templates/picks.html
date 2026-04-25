@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('추천종목')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: nav(${active})}"></nav>
+
+<main class="container">
+    <div class="d-flex justify-content-between align-items-end mb-3">
+        <h2 class="mb-0">🎯 오늘의 추천 종목</h2>
+        <span class="small text-muted">AI 자동 선정</span>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div id="picksLoading" class="text-center py-4">
+                <div class="spinner-large mx-auto"></div>
+                <div class="text-muted small mt-3 analyzing">AI가 코스피에서 좋은 종목을 고르고 있어요…</div>
+            </div>
+            <div id="picksContent"></div>
+            <div id="picksError" class="text-danger small" style="display:none"></div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+
+<script>
+(async function loadPicks() {
+    const loadingEl = document.getElementById('picksLoading');
+    const contentEl = document.getElementById('picksContent');
+    const errorEl = document.getElementById('picksError');
+    try {
+        const res = await fetch('/api/picks/today');
+        const picks = await res.json();
+        loadingEl.style.display = 'none';
+        if (!Array.isArray(picks) || picks.length === 0) {
+            contentEl.innerHTML = '<div class="text-muted text-center py-3">추천할 종목이 없어요.</div>';
+            return;
+        }
+        contentEl.innerHTML = picks.map((p, idx) => {
+            const cls = p.changeRate > 0 ? 'up' : (p.changeRate < 0 ? 'down' : 'flat');
+            const sign = p.changeRate > 0 ? '+' : '';
+            const reasons = (p.reasons || []).map(r => `<li>${r}</li>`).join('');
+            const warnings = (p.warnings || []).map(w => `<li>${w}</li>`).join('');
+            return `
+              <div class="recommend-card mb-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <div>
+                    <div class="fw-bold" style="font-size:1.1rem">${p.name}
+                      ${p.tag ? `<span class="badge bg-success ms-1">${p.tag}</span>` : ''}
+                    </div>
+                    <div class="text-muted small">${p.sector || ''}</div>
+                  </div>
+                  <div class="text-end">
+                    <div class="fw-bold" style="font-size:1.05rem">${p.currentPrice.toLocaleString()}원</div>
+                    <div class="${cls} small">${sign}${p.changeRate.toFixed(2)}%</div>
+                  </div>
+                </div>
+                <div class="recommend-comment mb-2">${p.summary || ''}</div>
+                <div class="d-flex gap-2 flex-wrap">
+                  ${reasons || warnings ? `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('rec-detail-${idx}').classList.toggle('d-none'); this.textContent = this.textContent === '추천 이유 닫기' ? '📋 추천 이유 보기' : '추천 이유 닫기';">📋 추천 이유 보기</button>` : ''}
+                  <a href="/stocks/${p.code}" class="btn btn-sm btn-primary">종목 상세 →</a>
+                </div>
+                ${reasons || warnings ? `
+                <div id="rec-detail-${idx}" class="d-none mt-3 pt-3 border-top">
+                  ${reasons ? `<div class="fw-bold small mb-1">💡 이래서 추천해요</div><ul class="small mb-2" style="line-height:1.6">${reasons}</ul>` : ''}
+                  ${warnings ? `<div class="fw-bold small mb-1" style="color:#b75d00">⚠️ 다만 이건 조심하세요</div><ul class="small mb-0" style="line-height:1.6">${warnings}</ul>` : ''}
+                </div>
+                ` : ''}
+              </div>
+            `;
+        }).join('');
+    } catch (e) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.textContent = '추천 종목 불러오기 실패: ' + e.message;
+    }
+})();
+</script>
+</body>
+</html>

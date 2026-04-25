@@ -21,4 +21,10 @@ public class HomeController {
         model.addAttribute("active", "home");
         return "index";
     }
+
+    @GetMapping("/picks")
+    public String picks(Model model) {
+        model.addAttribute("active", "picks");
+        return "picks";
+    }
 }
