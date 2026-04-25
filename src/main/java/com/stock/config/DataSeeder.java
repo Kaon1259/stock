@@ -7,6 +7,7 @@ import com.stock.repository.PriceHistoryRepository;
 import com.stock.repository.StockRepository;
 import com.stock.repository.WatchlistRepository;
 import com.stock.service.LiveDataService;
+import com.stock.service.StockSummaryCache;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationRunner;
@@ -24,6 +25,7 @@ public class DataSeeder {
     private final WatchlistRepository watchlistRepository;
     private final LiveDataService liveDataService;
     private final PriceHistoryRepository priceHistoryRepository;
+    private final StockSummaryCache stockSummaryCache;
 
     @Bean
     ApplicationRunner seedData() {
@@ -94,6 +96,7 @@ public class DataSeeder {
                 } catch (Exception e) {
                     log.warn("[LiveData] 매크로 뉴스 실패: {}", e.getMessage());
                 }
+                stockSummaryCache.warmUpAll();
                 log.info("[LiveData] 초기 적재 완료 ({}초) — 신규 적재 {}건, 기존 데이터 스킵 {}건",
                         (System.currentTimeMillis() - startTs) / 1000, loaded, skipped);
             }, "live-data-init");

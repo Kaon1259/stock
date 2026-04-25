@@ -42,6 +42,7 @@ public class LiveDataService {
     private final AnalystReportRepository reportRepository;
     private final NaverFinanceClient naverClient;
     private final GoogleNewsClient googleNewsClient;
+    private final StockSummaryCache stockSummaryCache;
 
     private final Map<String, LocalDateTime> lastSnapshotAt = new ConcurrentHashMap<>();
 
@@ -112,6 +113,7 @@ public class LiveDataService {
         }
         priceHistoryRepository.saveAll(toSave);
         log.info("[Live] {} 일별 시세 {}건 적재", code, toSave.size());
+        stockSummaryCache.refresh(code);
     }
 
     @Transactional
@@ -156,6 +158,7 @@ public class LiveDataService {
             c.setCalculatedAt(resp.consensus().calculatedAt());
             consensusRepository.save(c);
         }
+        stockSummaryCache.refresh(code);
         lastSnapshotAt.put(code, LocalDateTime.now());
     }
 

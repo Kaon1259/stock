@@ -21,14 +21,14 @@ public class WatchlistService {
 
     private final WatchlistRepository watchlistRepository;
     private final StockRepository stockRepository;
-    private final StockPriceService stockPriceService;
+    private final StockSummaryCache stockSummaryCache;
 
     public List<StockSummary> listSummaries() {
         List<Watchlist> entries = watchlistRepository.findAllByOrderByAddedAtAsc();
         List<StockSummary> result = new ArrayList<>();
         for (Watchlist w : entries) {
-            stockRepository.findById(w.getStockCode())
-                    .ifPresent(s -> result.add(stockPriceService.buildSummary(s)));
+            StockSummary s = stockSummaryCache.get(w.getStockCode());
+            if (s != null) result.add(s);
         }
         return result;
     }
