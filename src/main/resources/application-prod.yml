@@ -36,3 +36,6 @@ claude:
   api-key: ${CLAUDE_API_KEY}
   model: ${CLAUDE_MODEL:claude-sonnet-4-6}
   max-tokens: ${CLAUDE_MAX_TOKENS:2200}
+
+admin:
+  token: ${ADMIN_TOKEN:please-set-admin-token}
