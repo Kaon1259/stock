@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head(${stock.name} + ' - 종목 상세')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: nav(${active})}"></nav>
+
+<main class="container" th:data-code="${stock.code}">
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+            <h1 class="mb-1">
+                <span th:text="${stock.name}">종목명</span>
+            </h1>
+            <div class="text-muted">
+                <span th:text="${stock.code}"></span>
+                <span class="badge bg-secondary ms-1" th:text="${stock.market}">KOSPI</span>
+                <span th:if="${stock.type == 'ETF'}" class="badge bg-info">ETF</span>
+                <span th:if="${stock.sector}" th:text="' · ' + ${stock.sector}"></span>
+            </div>
+        </div>
+        <div>
+            <form th:if="${!inWatchlist}" method="post" action="/watchlist/add" class="d-inline">
+                <input type="hidden" name="code" th:value="${stock.code}">
+                <button class="btn btn-sm btn-outline-primary">⭐ 관심 등록</button>
+            </form>
+            <form th:if="${inWatchlist}" method="post" action="/watchlist/remove" class="d-inline">
+                <input type="hidden" name="code" th:value="${stock.code}">
+                <button class="btn btn-sm btn-outline-secondary">⭐ 등록됨</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex align-items-baseline gap-3 flex-wrap">
+                <div class="price-large" th:text="${#numbers.formatInteger(stock.currentPrice, 3, 'COMMA')} + '원'">0원</div>
+                <div th:class="'change-large ' + ${stock.changeClass}">
+                    <span th:text="${stock.changeSign} + ${#numbers.formatInteger(stock.change, 1, 'COMMA')}"></span>
+                    <span th:text="' (' + ${stock.changeSign} + ${#numbers.formatDecimal(stock.changeRate, 1, 2)} + '%)'"></span>
+                </div>
+            </div>
+            <div class="text-muted small mt-1">전일 종가 <span th:text="${#numbers.formatInteger(stock.previousClose, 3, 'COMMA')} + '원'"></span> · 거래량 <span th:text="${#numbers.formatInteger(stock.volume, 3, 'COMMA')}"></span></div>
+        </div>
+    </div>
+
+    <div id="signalCard" class="signal-card unknown">
+        <div class="signal-emoji">⚙️</div>
+        <div class="signal-label">분석 중…</div>
+        <div class="signal-summary" id="signalProgress">AI가 시세·뉴스·매크로를 종합하고 있어요</div>
+        <div class="loading-progress"></div>
+    </div>
+
+    <div class="card mb-3" id="planCard" style="display:none">
+        <div class="card-header fw-bold">💰 투자 전략</div>
+        <div class="card-body" id="planBody"></div>
+    </div>
+
+    <div class="card mb-3" id="scoreCard" style="display:none">
+        <div class="card-header fw-bold">📊 4가지 관점 점수</div>
+        <div class="card-body" id="scoreBody"></div>
+    </div>
+
+    <div class="card mb-3" id="monitorCard" style="display:none">
+        <div class="card-header fw-bold">👀 계속 지켜봐야 할 이슈</div>
+        <div class="card-body">
+            <ul id="monitorList" class="mb-0" style="font-size:1rem; line-height:1.7"></ul>
+        </div>
+    </div>
+
+    <a th:href="@{'/stocks/' + ${stock.code} + '/deep'}" class="btn btn-lg btn-dark w-100 mb-3">
+        🧠 심층 분석 받기 (자세한 리포트)
+    </a>
+
+    <div class="card mb-3" id="reasonsCard" style="display:none">
+        <div class="card-header fw-bold">💡 이렇게 본 이유</div>
+        <div class="card-body">
+            <ul class="mb-0" id="reasonsList" style="font-size:1rem; line-height:1.6"></ul>
+        </div>
+    </div>
+
+    <div class="card mb-3" id="warningsCard" style="display:none">
+        <div class="card-header fw-bold" style="background:#fff7e6; color:#b75d00">⚠️ 꼭 알아두세요</div>
+        <div class="card-body">
+            <ul class="mb-0" id="warningsList" style="font-size:1rem; line-height:1.6"></ul>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="fw-bold">📈 종가 차트</span>
+            <div class="btn-group range-tabs" role="group">
+                <button type="button" class="btn btn-sm btn-primary" data-range="daily">일별</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-range="weekly">주별</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-range="monthly">월별</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-range="quarterly">분기별</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+            <div class="text-muted small mt-2">
+                <span class="me-2"><span style="display:inline-block;width:14px;height:3px;background:#d4380d;vertical-align:middle"></span> 상승</span>
+                <span class="me-2"><span style="display:inline-block;width:14px;height:3px;background:#1d7afc;vertical-align:middle"></span> 하락</span>
+                <span><span style="display:inline-block;width:14px;height:0;border-top:2px dashed #888;vertical-align:middle"></span> 향후 3일 예상</span>
+            </div>
+        </div>
+    </div>
+
+    <div th:if="${consensus.hasData}" class="card mb-3">
+        <div class="card-header fw-bold">🏦 증권사 컨센서스</div>
+        <div class="card-body">
+            <div class="row text-center mb-3">
+                <div class="col-6" th:if="${consensus.averageTarget != null}">
+                    <div class="text-muted small">평균 목표가</div>
+                    <div class="fw-bold" style="font-size:1.15rem" th:text="${#numbers.formatInteger(consensus.averageTarget, 3, 'COMMA')} + '원'"></div>
+                </div>
+                <div class="col-6" th:if="${consensus.upsidePercent != null}">
+                    <div class="text-muted small">상승여력</div>
+                    <div th:class="'fw-bold ' + (${consensus.upsidePercent} > 0 ? 'up' : (${consensus.upsidePercent} < 0 ? 'down' : 'flat'))"
+                         style="font-size:1.15rem"
+                         th:text="(${consensus.upsidePercent} > 0 ? '+' : '') + ${#numbers.formatDecimal(consensus.upsidePercent, 1, 1)} + '%'"></div>
+                </div>
+            </div>
+            <div th:if="${consensus.opinionMean != null}" class="text-center mb-3 p-2"
+                 style="background:#f5f7fa; border-radius:8px">
+                <span style="font-size:1.2rem" th:text="${consensus.opinionEmoji}"></span>
+                <span class="fw-bold" th:text="' ' + ${consensus.opinionLabel}"></span>
+                <span class="text-muted small" th:text="' (' + ${#numbers.formatDecimal(consensus.opinionMean, 1, 2)} + ' / 5.0)'"></span>
+                <div class="text-muted small mt-1">5점 만점 — 5에 가까울수록 매수 의견 강함</div>
+            </div>
+            <div th:if="${!#lists.isEmpty(consensus.reports)}">
+                <div class="fw-bold small text-muted mb-2">최근 증권사 리포트</div>
+                <ul class="list-unstyled mb-0">
+                    <li th:each="r : ${consensus.reports}" class="news-item py-2">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div>
+                                <div class="fw-bold" style="font-size:0.95rem" th:text="${r.title}"></div>
+                                <div class="text-muted small" th:text="${r.firmName} + ' · ' + ${#temporals.format(r.publishedAt, 'yyyy-MM-dd')}"></div>
+                            </div>
+                            <a th:if="${r.externalId != null and !r.externalId.isEmpty()}"
+                               th:href="@{'https://m.stock.naver.com/research/' + ${r.externalId}}"
+                               target="_blank" class="btn btn-sm btn-outline-secondary">원문</a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div th:if="${consensus.calculatedAt != null}" class="text-end text-muted small mt-2"
+                 th:text="'산정일: ' + ${#temporals.format(consensus.calculatedAt, 'yyyy-MM-dd')}"></div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header fw-bold">📰 종목 관련 뉴스</div>
+        <div class="card-body">
+            <div th:if="${#lists.isEmpty(stockNews)}" class="text-muted">관련 뉴스가 없어요.</div>
+            <div th:each="n,iter : ${stockNews}" th:if="${iter.index < 5}" class="news-item">
+                <a class="news-title d-block" th:href="${n.url}" target="_blank" th:text="${n.title}">제목</a>
+                <div class="news-source mt-1" th:text="${n.source} + ' · ' + ${#temporals.format(n.publishedAt, 'MM-dd HH:mm')}"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header fw-bold">🌍 시장 환경</div>
+        <div class="card-body">
+            <details open>
+                <summary class="fw-bold">🇰🇷 국내 매크로</summary>
+                <div class="mt-2">
+                    <div th:each="n,iter : ${macroNews}" th:if="${iter.index < 5}" class="news-item">
+                        <a class="news-title d-block" th:href="${n.url}" target="_blank" th:text="${n.title}"></a>
+                        <div class="news-source mt-1" th:text="${n.source} + ' · ' + ${#temporals.format(n.publishedAt, 'MM-dd HH:mm')}"></div>
+                    </div>
+                </div>
+            </details>
+            <hr>
+            <details>
+                <summary class="fw-bold">🌐 해외 증시</summary>
+                <div class="mt-2">
+                    <div th:each="n,iter : ${globalNews}" th:if="${iter.index < 5}" class="news-item">
+                        <a class="news-title d-block" th:href="${n.url}" target="_blank" th:text="${n.title}"></a>
+                        <div class="news-source mt-1" th:text="${n.source} + ' · ' + ${#temporals.format(n.publishedAt, 'MM-dd HH:mm')}"></div>
+                    </div>
+                </div>
+            </details>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+
+<script th:inline="javascript">
+const stockCode = /*[[${stock.code}]]*/ '';
+
+let chart = null;
+const UP = '#d4380d';
+const DOWN = '#1d7afc';
+const segColor = ctx => ctx.p1.parsed.y >= ctx.p0.parsed.y ? UP : DOWN;
+
+async function loadChart(range) {
+    const res = await fetch(`/api/stocks/${stockCode}/chart?range=${range}`);
+    const data = await res.json();
+    const labels = [...data.points.map(p => p.label)];
+    const closes = data.points.map(p => p.close);
+    const forecast = data.forecast || [];
+
+    const datasets = [{
+        label: '종가',
+        data: closes,
+        borderColor: UP,
+        fill: false,
+        tension: 0.2,
+        pointRadius: 1.5,
+        borderWidth: 2.2,
+        segment: { borderColor: segColor },
+    }];
+
+    if (forecast.length > 0 && closes.length > 0) {
+        const lastClose = closes[closes.length - 1];
+        const padding = new Array(closes.length - 1).fill(null);
+        labels.push(...forecast.map(p => p.label));
+        datasets.push({
+            label: '예상',
+            data: [...padding, lastClose, ...forecast.map(p => p.close)],
+            borderColor: '#888',
+            borderDash: [6, 4],
+            pointRadius: 3.5,
+            pointBackgroundColor: '#fff',
+            pointBorderColor: '#666',
+            borderWidth: 2,
+            fill: false,
+            tension: 0,
+            segment: { borderColor: segColor },
+        });
+    }
+
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('priceChart').getContext('2d'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: forecast.length > 0, position: 'bottom', labels: { boxWidth: 14, font: { size: 12 } } },
+                tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y.toLocaleString() + '원' } }
+            },
+            scales: { y: { ticks: { callback: v => v.toLocaleString() + '원' } } }
+        }
+    });
+}
+
+document.querySelectorAll('.range-tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.range-tabs button').forEach(b => {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-outline-secondary');
+        });
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-primary');
+        loadChart(btn.dataset.range);
+    });
+});
+
+loadChart('daily');
+
+const SIGNAL_MAP = {
+    BUY: { cls: 'buy', emoji: '👍', label: '사도 괜찮은 편' },
+    HOLD: { cls: 'hold', emoji: '⏸️', label: '잠시 지켜보세요' },
+    SELL: { cls: 'sell', emoji: '🛑', label: '지금은 피하세요' },
+};
+
+function renderStars(n) {
+    let html = '';
+    for (let i = 1; i <= 5; i++) {
+        html += i <= n ? '★' : '<span class="empty">★</span>';
+    }
+    return html;
+}
+
+async function loadPrediction() {
+    const progressEl = document.getElementById('signalProgress');
+    const progressMsgs = [
+        { at: 0, text: '시세를 살펴보고 있어요…' },
+        { at: 5000, text: '관련 뉴스를 읽고 있어요…' },
+        { at: 12000, text: '시장 환경과 컨센서스를 비교 중이에요…' },
+        { at: 22000, text: '결론을 정리하고 있어요…' },
+        { at: 35000, text: '거의 다 됐어요…' }
+    ];
+    const startTs = Date.now();
+    const progressTimer = setInterval(() => {
+        const elapsed = Date.now() - startTs;
+        for (let i = progressMsgs.length - 1; i >= 0; i--) {
+            if (elapsed >= progressMsgs[i].at) {
+                if (progressEl && progressEl.textContent !== progressMsgs[i].text) {
+                    progressEl.textContent = progressMsgs[i].text;
+                }
+                break;
+            }
+        }
+    }, 1000);
+
+    try {
+        const ctrl = new AbortController();
+        const timeoutId = setTimeout(() => ctrl.abort(), 60000);
+        const res = await fetch(`/api/stocks/${stockCode}/prediction`, { signal: ctrl.signal });
+        clearTimeout(timeoutId);
+        clearInterval(progressTimer);
+        const p = await res.json();
+
+        const sig = SIGNAL_MAP[p.recommendation] || { cls: 'unknown', emoji: '❓', label: '판단 불가' };
+        const signalCard = document.getElementById('signalCard');
+        signalCard.className = 'signal-card ' + sig.cls;
+
+        const plan = p.investmentPlan;
+        let metaHtml = '';
+        if (plan && plan.positionSize) metaHtml += `<span>📦 ${plan.positionSize}</span>`;
+        if (plan && plan.holdPeriod) metaHtml += `<span>📅 ${plan.holdPeriod}</span>`;
+
+        signalCard.innerHTML = `
+            <div class="signal-emoji">${sig.emoji}</div>
+            <div class="signal-label">${p.headline || sig.label}</div>
+            <div class="signal-summary">${p.summary || ''}</div>
+            ${metaHtml ? `<div class="signal-meta">${metaHtml}</div>` : ''}
+        `;
+
+        if (plan && (plan.buyPlan?.length || plan.sellPlan?.length || plan.stopLoss || plan.entryStrategy)) {
+            const planBody = document.getElementById('planBody');
+            let html = '';
+            if (plan.entryStrategy) {
+                html += `<div class="alert alert-light border mb-3" style="font-size:1rem; line-height:1.55">${plan.entryStrategy}</div>`;
+            }
+            if (plan.buyPlan && plan.buyPlan.length > 0) {
+                html += `<div class="plan-block">
+                  <div class="plan-title">🟢 분할 매수 계획</div>
+                  <ol class="plan-list">${plan.buyPlan.map(s => `<li>${s}</li>`).join('')}</ol>
+                </div>`;
+            }
+            if (plan.sellPlan && plan.sellPlan.length > 0) {
+                html += `<div class="plan-block">
+                  <div class="plan-title">🎯 익절 / 매도 목표</div>
+                  <ol class="plan-list">${plan.sellPlan.map(s => `<li>${s}</li>`).join('')}</ol>
+                </div>`;
+            }
+            if (plan.stopLoss) {
+                html += `<div class="plan-block">
+                  <div class="plan-title" style="color:#b00020">🛑 손절선</div>
+                  <div class="plan-stop">${plan.stopLoss}</div>
+                </div>`;
+            }
+            if (plan.positionSize || plan.holdPeriod) {
+                html += `<div class="plan-block">
+                  <div class="plan-title">📋 비중 · 기간</div>
+                  ${plan.positionSize ? `<div>📦 비중: ${plan.positionSize}</div>` : ''}
+                  ${plan.holdPeriod ? `<div>📅 기간: ${plan.holdPeriod}</div>` : ''}
+                </div>`;
+            }
+            planBody.innerHTML = html;
+            document.getElementById('planCard').style.display = 'block';
+        }
+
+        if (p.scores && p.scores.length > 0) {
+            const body = document.getElementById('scoreBody');
+            body.innerHTML = p.scores.map(s => `
+                <div class="score-row">
+                    <div>
+                        <div class="score-label">${s.label}</div>
+                        <div class="score-comment">${s.comment}</div>
+                    </div>
+                    <div class="score-stars">${renderStars(s.stars)}</div>
+                </div>
+            `).join('');
+            document.getElementById('scoreCard').style.display = 'block';
+        }
+
+        if (p.monitorPoints && p.monitorPoints.length > 0) {
+            document.getElementById('monitorList').innerHTML =
+                p.monitorPoints.map(m => `<li>${m}</li>`).join('');
+            document.getElementById('monitorCard').style.display = 'block';
+        }
+
+        if (p.reasons && p.reasons.length > 0) {
+            document.getElementById('reasonsList').innerHTML =
+                p.reasons.map(r => `<li>${r}</li>`).join('');
+            document.getElementById('reasonsCard').style.display = 'block';
+        }
+
+        if (p.warnings && p.warnings.length > 0) {
+            document.getElementById('warningsList').innerHTML =
+                p.warnings.map(w => `<li>${w}</li>`).join('');
+            document.getElementById('warningsCard').style.display = 'block';
+        }
+    } catch (e) {
+        clearInterval(progressTimer);
+        const signalCard = document.getElementById('signalCard');
+        signalCard.className = 'signal-card sell';
+        const msg = e.name === 'AbortError'
+            ? '분석이 너무 오래 걸려요. 잠시 후 새로고침해 주세요.'
+            : '분석에 실패했어요: ' + e.message;
+        signalCard.innerHTML = `<div class="signal-emoji">⚠️</div><div class="signal-label">분석 실패</div><div class="signal-summary">${msg}</div>`;
+    }
+}
+
+loadPrediction();
+</script>
+</body>
+</html>

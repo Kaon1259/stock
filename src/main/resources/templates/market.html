@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('시장·매크로')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: nav(${active})}"></nav>
+
+<main class="container">
+    <h2 class="mb-4">시장·매크로</h2>
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header fw-bold">🇰🇷 국내 시장 / 매크로</div>
+                <div class="card-body">
+                    <div th:each="n : ${macroNews}" class="news-item">
+                        <a class="news-title d-block" th:href="${n.url}" target="_blank" th:text="${n.title}"></a>
+                        <div class="news-source mt-1" th:text="${n.source} + ' · ' + ${#temporals.format(n.publishedAt, 'MM-dd HH:mm')}"></div>
+                        <div class="text-muted small mt-1" th:text="${n.summary}"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header fw-bold">🌐 해외 증시 / 글로벌</div>
+                <div class="card-body">
+                    <div th:each="n : ${globalNews}" class="news-item">
+                        <a class="news-title d-block" th:href="${n.url}" target="_blank" th:text="${n.title}"></a>
+                        <div class="news-source mt-1" th:text="${n.source} + ' · ' + ${#temporals.format(n.publishedAt, 'MM-dd HH:mm')}"></div>
+                        <div class="text-muted small mt-1" th:text="${n.summary}"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+</body>
+</html>

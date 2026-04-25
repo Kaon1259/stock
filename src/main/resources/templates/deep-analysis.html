@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head(${stock.name} + ' - 심층 분석')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: nav(${active})}"></nav>
+
+<main class="container" th:data-code="${stock.code}">
+    <div class="mb-3">
+        <a th:href="@{'/stocks/' + ${stock.code}}" class="text-decoration-none">← <span th:text="${stock.name}"></span> 종목 페이지로</a>
+    </div>
+
+    <h1>
+        🧠 <span th:text="${stock.name}"></span> 심층 분석
+    </h1>
+    <div class="text-muted mb-3">
+        AI가 회사 정보·실적·시장 환경·위험을 종합한 자세한 리포트입니다.
+    </div>
+
+    <div id="signalCard" class="signal-card unknown">
+        <div class="signal-emoji">⏳</div>
+        <div class="signal-label">분석 중…</div>
+        <div class="signal-summary">
+            AI가 시세·뉴스·매크로·증권사 의견을 모두 읽고 정리하고 있어요.<br>
+            <strong>30~60초</strong> 정도 걸리니 잠시만 기다려 주세요.
+        </div>
+    </div>
+
+    <div id="content" style="display:none">
+        <div class="deep-section">
+            <h4>📌 한 줄로 보면</h4>
+            <p id="oneLine" style="font-size:1.1rem; font-weight:600"></p>
+        </div>
+
+        <div class="deep-section">
+            <h4>🏢 이 회사는 무슨 회사?</h4>
+            <p id="companyOverview"></p>
+        </div>
+
+        <div class="deep-section">
+            <h4>💼 요즘 잘하고 있는 점</h4>
+            <ul id="businessHighlights"></ul>
+        </div>
+
+        <div class="deep-section">
+            <h4>📈 매출과 이익 흐름</h4>
+            <p id="earningsTrend"></p>
+        </div>
+
+        <div class="deep-section">
+            <h4>🌍 시장 환경</h4>
+            <p id="marketEnvironment"></p>
+        </div>
+
+        <div class="deep-section deep-warning">
+            <h4>⚠️ 꼭 조심하세요</h4>
+            <ul id="risks"></ul>
+        </div>
+
+        <div class="deep-section">
+            <h4>🎯 최종 권고</h4>
+            <p id="finalAdvice" style="font-size:1.05rem; line-height:1.7"></p>
+        </div>
+
+        <div class="text-muted small text-end mb-4">
+            분석 시각: <span id="generatedAt"></span> · 같은 날 다시 보면 즉시 표시됩니다
+        </div>
+
+        <a th:href="@{'/stocks/' + ${stock.code}}" class="btn btn-outline-primary w-100 mb-3">
+            ← 종목 페이지로 돌아가기
+        </a>
+    </div>
+
+    <div id="errorBox" class="alert alert-danger" style="display:none"></div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+
+<script th:inline="javascript">
+const stockCode = /*[[${stock.code}]]*/ '';
+
+const SIGNAL_MAP = {
+    BUY: { cls: 'buy', emoji: '👍', label: '사도 괜찮은 편' },
+    HOLD: { cls: 'hold', emoji: '⏸️', label: '잠시 지켜보세요' },
+    SELL: { cls: 'sell', emoji: '🛑', label: '지금은 피하세요' },
+};
+
+(async function() {
+    try {
+        const res = await fetch(`/api/stocks/${stockCode}/deep`);
+        if (!res.ok) throw new Error('서버 응답 오류 ' + res.status);
+        const d = await res.json();
+
+        const sig = SIGNAL_MAP[d.recommendation] || { cls: 'unknown', emoji: '❓', label: '판단 불가' };
+        const card = document.getElementById('signalCard');
+        card.className = 'signal-card ' + sig.cls;
+        let metaHtml = '';
+        if (d.recommendation === 'BUY') {
+            if (d.buyPriceHint) metaHtml += `<span>💰 ${d.buyPriceHint}</span>`;
+            if (d.holdPeriod) metaHtml += `<span>📅 ${d.holdPeriod}</span>`;
+        }
+        card.innerHTML = `
+            <div class="signal-emoji">${sig.emoji}</div>
+            <div class="signal-label">${d.headline || sig.label}</div>
+            ${metaHtml ? `<div class="signal-meta">${metaHtml}</div>` : ''}
+        `;
+
+        document.getElementById('oneLine').textContent = d.oneLine || '';
+        document.getElementById('companyOverview').textContent = d.companyOverview || '';
+        document.getElementById('businessHighlights').innerHTML =
+            (d.businessHighlights || []).map(x => `<li>${x}</li>`).join('');
+        document.getElementById('earningsTrend').textContent = d.earningsTrend || '';
+        document.getElementById('marketEnvironment').textContent = d.marketEnvironment || '';
+        document.getElementById('risks').innerHTML =
+            (d.risks || []).map(x => `<li>${x}</li>`).join('');
+        document.getElementById('finalAdvice').textContent = d.finalAdvice || '';
+        document.getElementById('generatedAt').textContent = d.generatedAt || '';
+
+        document.getElementById('content').style.display = 'block';
+    } catch (e) {
+        document.getElementById('signalCard').style.display = 'none';
+        const err = document.getElementById('errorBox');
+        err.style.display = 'block';
+        err.innerHTML = '<strong>분석 실패:</strong> ' + e.message + '<br>잠시 후 다시 시도해 주세요.';
+    }
+})();
+</script>
+</body>
+</html>

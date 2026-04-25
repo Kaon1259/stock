@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('대시보드')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: nav(${active})}"></nav>
+
+<main class="container">
+    <div th:if="${message}" class="alert alert-success" th:text="${message}"></div>
+    <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span class="fw-bold">🎯 오늘의 추천 종목</span>
+            <span class="small text-muted">AI 자동 선정</span>
+        </div>
+        <div class="card-body">
+            <div id="picksLoading">
+                <div class="skeleton mb-2"></div>
+                <div class="skeleton mb-2" style="width: 80%"></div>
+                <div class="skeleton mb-2" style="width: 60%"></div>
+                <div class="text-muted small mt-3 text-center analyzing">AI가 코스피에서 좋은 종목을 고르고 있어요…</div>
+            </div>
+            <div id="picksContent"></div>
+            <div id="picksError" class="text-danger small" style="display:none"></div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-end mb-2">
+        <h2 class="mb-0">⭐ 내 관심 종목</h2>
+        <a href="/watchlist" class="btn btn-sm btn-outline-primary">관리</a>
+    </div>
+
+    <div th:if="${#lists.isEmpty(watchlist)}" class="card">
+        <div class="card-body text-center py-4">
+            <h5 class="text-muted mb-3">아직 등록된 관심 종목이 없어요</h5>
+            <a href="/watchlist" class="btn btn-primary">관심 종목 추가하기</a>
+        </div>
+    </div>
+
+    <div class="row g-2">
+        <div th:each="s : ${watchlist}" class="col-12 col-md-6">
+            <a th:href="@{'/stocks/' + ${s.code}}" class="text-decoration-none text-dark">
+                <div class="card stock-card">
+                    <div class="card-body py-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="fw-bold" style="font-size:1.1rem" th:text="${s.name}">종목명</div>
+                                <div class="text-muted small">
+                                    <span th:text="${s.code}"></span>
+                                    <span th:if="${s.sector}" th:text="' · ' + ${s.sector}"></span>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-secondary" th:text="${s.market}">KOSPI</span>
+                                <span th:if="${s.type == 'ETF'}" class="badge bg-info ms-1">ETF</span>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-end mt-2">
+                            <div class="price-large" th:text="${#numbers.formatInteger(s.currentPrice, 3, 'COMMA')} + '원'">0원</div>
+                            <div th:class="'change-large ' + ${s.changeClass}">
+                                <span th:text="${s.changeSign} + ${#numbers.formatInteger(s.change, 1, 'COMMA')}"></span>
+                                <span th:text="' (' + ${s.changeSign} + ${#numbers.formatDecimal(s.changeRate, 1, 2)} + '%)'"></span>
+                            </div>
+                        </div>
+                        <div class="signal-badge mt-2" th:attr="data-code=${s.code}">
+                            <div class="signal-loading">
+                                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                                <span class="text">🤖 AI가 분석하고 있어요</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+
+<script>
+(async function loadPicks() {
+    const loadingEl = document.getElementById('picksLoading');
+    const contentEl = document.getElementById('picksContent');
+    const errorEl = document.getElementById('picksError');
+    try {
+        const res = await fetch('/api/picks/today');
+        const picks = await res.json();
+        loadingEl.style.display = 'none';
+        if (!Array.isArray(picks) || picks.length === 0) {
+            contentEl.innerHTML = '<div class="text-muted text-center">추천할 종목이 없어요.</div>';
+            return;
+        }
+        contentEl.innerHTML = picks.map((p, idx) => {
+            const cls = p.changeRate > 0 ? 'up' : (p.changeRate < 0 ? 'down' : 'flat');
+            const sign = p.changeRate > 0 ? '+' : '';
+            const reasons = (p.reasons || []).map(r => `<li>${r}</li>`).join('');
+            const warnings = (p.warnings || []).map(w => `<li>${w}</li>`).join('');
+            return `
+              <div class="recommend-card mb-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <div>
+                    <div class="fw-bold" style="font-size:1.1rem">${p.name}
+                      ${p.tag ? `<span class="badge bg-success ms-1">${p.tag}</span>` : ''}
+                    </div>
+                    <div class="text-muted small">${p.sector || ''}</div>
+                  </div>
+                  <div class="text-end">
+                    <div class="fw-bold" style="font-size:1.05rem">${p.currentPrice.toLocaleString()}원</div>
+                    <div class="${cls} small">${sign}${p.changeRate.toFixed(2)}%</div>
+                  </div>
+                </div>
+                <div class="recommend-comment mb-2">${p.summary || ''}</div>
+                <div class="d-flex gap-2 flex-wrap">
+                  ${reasons || warnings ? `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('rec-detail-${idx}').classList.toggle('d-none'); this.textContent = this.textContent === '추천 이유 닫기' ? '📋 추천 이유 보기' : '추천 이유 닫기';">📋 추천 이유 보기</button>` : ''}
+                  <a href="/stocks/${p.code}" class="btn btn-sm btn-primary">종목 상세 →</a>
+                </div>
+                ${reasons || warnings ? `
+                <div id="rec-detail-${idx}" class="d-none mt-3 pt-3 border-top">
+                  ${reasons ? `<div class="fw-bold small mb-1">💡 이래서 추천해요</div><ul class="small mb-2" style="line-height:1.6">${reasons}</ul>` : ''}
+                  ${warnings ? `<div class="fw-bold small mb-1" style="color:#b75d00">⚠️ 다만 이건 조심하세요</div><ul class="small mb-0" style="line-height:1.6">${warnings}</ul>` : ''}
+                </div>
+                ` : ''}
+              </div>
+            `;
+        }).join('');
+    } catch (e) {
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'block';
+        errorEl.textContent = '추천 종목 불러오기 실패: ' + e.message;
+    }
+})();
+
+(async function loadWatchlistSignals() {
+    const badges = document.querySelectorAll('.signal-badge');
+    if (badges.length === 0) return;
+    const startTs = Date.now();
+    const MIN_VISIBLE_MS = 1400;
+    try {
+        const res = await fetch('/api/watchlist/signals');
+        const signals = await res.json();
+        const map = {};
+        (signals || []).forEach(s => map[s.code] = s);
+
+        const elapsed = Date.now() - startTs;
+        if (elapsed < MIN_VISIBLE_MS) {
+            await new Promise(r => setTimeout(r, MIN_VISIBLE_MS - elapsed));
+        }
+
+        badges.forEach(b => {
+            const code = b.getAttribute('data-code');
+            const s = map[code];
+            if (!s) {
+                b.innerHTML = '<span class="text-muted small">— 신호 없음</span>';
+                return;
+            }
+            const cls = s.signal === 'BUY' ? 'buy' : (s.signal === 'SELL' ? 'sell' : 'hold');
+            b.innerHTML = `
+              <div class="signal-reveal">
+                <span class="signal-pill ${cls}">${s.emoji} ${s.label}</span>
+                <div class="text-muted small mt-1">${s.reason}</div>
+              </div>
+            `;
+        });
+    } catch (e) {
+        badges.forEach(b => b.innerHTML = '<span class="text-muted small">신호 분석 실패</span>');
+    }
+})();
+</script>
+</body>
+</html>

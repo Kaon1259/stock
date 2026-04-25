@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a2e">
+    <title th:text="${title} ?: 'KOSPI 관심종목'">KOSPI 관심종목</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/app.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
+</head>
+
+<nav th:fragment="nav(active)" class="navbar navbar-expand-md navbar-dark bg-dark sticky-top mb-3">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/">📈 KOSPI Watch</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link" th:classappend="${active == 'home'} ? 'active fw-bold' : ''" href="/">대시보드</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" th:classappend="${active == 'watchlist'} ? 'active fw-bold' : ''" href="/watchlist">관심종목 관리</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" th:classappend="${active == 'market'} ? 'active fw-bold' : ''" href="/market">시장·매크로</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<footer th:fragment="footer" class="text-center text-muted small mt-5 mb-4 px-3">
+    <hr>
+    <div>※ 본 화면의 시세·뉴스·예측은 데모 데이터이며 투자 판단의 근거가 될 수 없습니다.</div>
+    <div class="mt-1">투자의 책임은 본인에게 있습니다.</div>
+</footer>
+</html>

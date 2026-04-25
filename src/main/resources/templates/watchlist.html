@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('관심종목 관리')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: nav(${active})}"></nav>
+
+<main class="container">
+    <div th:if="${message}" class="alert alert-success" th:text="${message}"></div>
+    <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+
+    <h2 class="mb-4">관심종목 관리</h2>
+
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header fw-bold">관심 종목 추가</div>
+                <div class="card-body">
+                    <form method="post" action="/watchlist/add">
+                        <label class="form-label">종목 선택</label>
+                        <select name="code" class="form-select mb-3" required>
+                            <option value="">-- 종목을 선택하세요 --</option>
+                            <optgroup label="📊 일반 종목">
+                                <option th:each="s : ${allStocks}" th:if="${s.type?.name() == 'STOCK'}"
+                                        th:value="${s.code}" th:text="${s.name} + ' (' + ${s.code} + ')'"></option>
+                            </optgroup>
+                            <optgroup label="📈 ETF">
+                                <option th:each="s : ${allStocks}" th:if="${s.type?.name() == 'ETF'}"
+                                        th:value="${s.code}" th:text="${s.name} + ' (' + ${s.code} + ')'"></option>
+                            </optgroup>
+                        </select>
+                        <button type="submit" class="btn btn-primary w-100">추가</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header fw-bold">현재 관심 종목 (<span th:text="${#lists.size(watchlist)}">0</span>개)</div>
+                <div class="card-body p-0">
+                    <div th:if="${#lists.isEmpty(watchlist)}" class="text-muted text-center py-4">
+                        등록된 관심 종목이 없습니다.
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li th:each="s : ${watchlist}" class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <a th:href="@{'/stocks/' + ${s.code}}" class="text-decoration-none fw-bold" th:text="${s.name}">종목</a>
+                                <span class="text-muted small" th:text="' (' + ${s.code} + ')'"></span>
+                                <div th:class="'small ' + ${s.changeClass}">
+                                    <span th:text="${#numbers.formatInteger(s.currentPrice, 3, 'COMMA')} + '원'"></span>
+                                    <span th:text="' ' + ${s.changeSign} + ${#numbers.formatDecimal(s.changeRate, 1, 2)} + '%'"></span>
+                                </div>
+                            </div>
+                            <form method="post" action="/watchlist/remove">
+                                <input type="hidden" name="code" th:value="${s.code}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">삭제</button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+</body>
+</html>
