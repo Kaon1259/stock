@@ -10,6 +10,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -242,6 +243,42 @@ public class NaverFinanceClient {
     }
 
     public record DailyOhlcv(LocalDate date, long open, long high, long low, long close, long volume) {}
+
+    public record MinutePoint(LocalDateTime time, long price) {}
+
+    public List<MinutePoint> fetchTodayMinutes(String code) {
+        try {
+            String body = apiClient.get()
+                    .uri(uri -> uri.path("/chart/domestic/item/{code}/minute")
+                            .queryParam("count", 400)
+                            .build(code))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(Duration.ofSeconds(20))
+                    .block();
+            JsonNode arr = mapper.readTree(body);
+            LocalDate today = LocalDate.now();
+            List<MinutePoint> rows = new ArrayList<>();
+            for (JsonNode n : arr) {
+                String dt = n.path("localDateTime").asText();
+                if (dt == null || dt.length() != 14) continue;
+                LocalDateTime ldt;
+                try { ldt = LocalDateTime.parse(dt, NAVER_DATETIME); } catch (Exception e) { continue; }
+                if (!ldt.toLocalDate().equals(today)) continue;
+                long price = Math.round(n.path("currentPrice").asDouble(0));
+                if (price == 0) price = Math.round(n.path("closePrice").asDouble(0));
+                if (price == 0) continue;
+                rows.add(new MinutePoint(ldt, price));
+            }
+            lastErrors.remove("minutes:" + code);
+            return rows;
+        } catch (Exception e) {
+            String chain = errorChain(e);
+            lastErrors.put("minutes:" + code, chain);
+            log.warn("[Naver] minutes 실패 {}: {}", code, chain);
+            return List.of();
+        }
+    }
 
     public record IntegrationResponse(Snapshot snapshot, ConsensusInfo consensus, List<Research> researches) {}
 

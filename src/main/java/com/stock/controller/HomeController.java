@@ -27,4 +27,11 @@ public class HomeController {
         model.addAttribute("active", "picks");
         return "picks";
     }
+
+    @GetMapping("/realtime")
+    public String realtime(Model model) {
+        model.addAttribute("watchlist", watchlistService.listSummaries());
+        model.addAttribute("active", "realtime");
+        return "realtime";
+    }
 }

@@ -22,9 +22,9 @@
 
     <div class="row g-2">
         <div th:each="s : ${watchlist}" class="col-12 col-md-6">
-            <a th:href="@{'/stocks/' + ${s.code}}" class="text-decoration-none text-dark">
-                <div class="card stock-card">
-                    <div class="card-body py-3">
+            <div class="card stock-card">
+                <a th:href="@{'/stocks/' + ${s.code}}" class="text-decoration-none text-dark">
+                    <div class="card-body py-3 pb-2">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
                                 <div class="fw-bold" style="font-size:1.1rem" th:text="${s.name}">종목명</div>
@@ -45,6 +45,9 @@
                                 <span th:text="' (' + ${s.changeSign} + ${#numbers.formatDecimal(s.changeRate, 1, 2)} + '%)'"></span>
                             </div>
                         </div>
+                        <div class="text-muted small mt-1">
+                            전일 종가 <span th:text="${#numbers.formatInteger(s.previousClose, 3, 'COMMA')} + '원'">0원</span>
+                        </div>
                         <div class="signal-badge mt-2" th:attr="data-code=${s.code}">
                             <div class="signal-loading">
                                 <span class="dot"></span><span class="dot"></span><span class="dot"></span>
@@ -52,11 +55,50 @@
                             </div>
                         </div>
                     </div>
+                </a>
+                <div class="card-footer bg-transparent border-top-0 pt-0 pb-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary w-100 live-view-btn"
+                            th:attr="data-code=${s.code}, data-name=${s.name}, data-prev=${s.previousClose}">
+                        📡 실시간보기
+                    </button>
                 </div>
-            </a>
+            </div>
         </div>
     </div>
 </main>
+
+<div class="modal fade" id="liveChartModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="liveChartTitle">실시간 차트</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-4">
+                        <div class="text-muted small">전일 종가</div>
+                        <div class="h6 mb-0" id="liveChartPrev">-</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted small">현재가</div>
+                        <div class="h5 mb-0" id="liveChartCurrent">-</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted small">변동</div>
+                        <div class="h6 mb-0 flat" id="liveChartChange">-</div>
+                    </div>
+                </div>
+                <div style="height: 300px; position: relative;">
+                    <canvas id="liveChartCanvas"></canvas>
+                </div>
+                <div class="text-muted small mt-2 text-end">
+                    <span id="liveChartStatus">대기 중…</span> · 5초마다 갱신
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <footer th:replace="~{fragments/layout :: footer}"></footer>
 
@@ -95,6 +137,186 @@
     } catch (e) {
         badges.forEach(b => b.innerHTML = '<span class="text-muted small">신호 분석 실패</span>');
     }
+})();
+
+(function liveChartHook() {
+    const POLL_MS = 5000;
+    const OPEN_S = 9 * 3600;             // 09:00
+    const CLOSE_S = 15 * 3600 + 30 * 60; // 15:30
+    let chart = null;
+    let timer = null;
+    let currentCode = null;
+    let prevClose = 0;
+
+    const modalEl = document.getElementById('liveChartModal');
+    const titleEl = document.getElementById('liveChartTitle');
+    const prevEl = document.getElementById('liveChartPrev');
+    const curEl = document.getElementById('liveChartCurrent');
+    const chgEl = document.getElementById('liveChartChange');
+    const statusEl = document.getElementById('liveChartStatus');
+    const canvas = document.getElementById('liveChartCanvas');
+
+    function fmt(n) { return Number(n).toLocaleString('ko-KR'); }
+    function pad2(n) { return String(n).padStart(2, '0'); }
+    function fmtHM(s) {
+        s = Math.max(0, Math.floor(s));
+        return pad2(Math.floor(s / 3600)) + ':' + pad2(Math.floor((s % 3600) / 60));
+    }
+    function fmtHMS(s) {
+        s = Math.max(0, Math.floor(s));
+        return pad2(Math.floor(s / 3600)) + ':' + pad2(Math.floor((s % 3600) / 60)) + ':' + pad2(s % 60);
+    }
+    function secondsOfDay(d) {
+        return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+    }
+
+    function buildChart() {
+        if (chart) chart.destroy();
+        const datasets = [{
+            label: '현재가',
+            data: [],
+            borderColor: 'rgb(54, 162, 235)',
+            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+            tension: 0.25,
+            pointRadius: 2,
+            fill: true,
+            spanGaps: true
+        }];
+        if (prevClose > 0) {
+            datasets.push({
+                label: '전일 종가',
+                data: [
+                    { x: OPEN_S, y: prevClose },
+                    { x: CLOSE_S, y: prevClose }
+                ],
+                borderColor: 'rgba(150,150,150,0.7)',
+                borderDash: [6, 4],
+                pointRadius: 0,
+                fill: false
+            });
+        }
+        chart = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: { datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'nearest', intersect: false },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        min: OPEN_S,
+                        max: CLOSE_S,
+                        ticks: {
+                            stepSize: 3600,
+                            callback: v => fmtHM(v),
+                            maxRotation: 0,
+                            autoSkip: false
+                        },
+                        title: { display: true, text: '장 시간 (09:00 ~ 15:30)' }
+                    },
+                    y: { ticks: { callback: v => fmt(v) + '원' } }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            title: items => items.length ? fmtHMS(items[0].parsed.x) : '',
+                            label: ctx => ctx.dataset.label + ': ' + fmt(ctx.parsed.y) + '원'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async function poll() {
+        if (!currentCode) return;
+        statusEl.textContent = '갱신 중…';
+        try {
+            const res = await fetch('/api/stocks/' + currentCode + '/live');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const q = await res.json();
+            if (!q || !q.currentPrice) {
+                statusEl.textContent = '시세 없음';
+                return;
+            }
+            const now = new Date();
+            const sec = secondsOfDay(now);
+            const label = fmtHMS(sec);
+
+            if (sec >= OPEN_S && sec <= CLOSE_S) {
+                const ds = chart.data.datasets[0].data;
+                if (ds.length === 0 || ds[ds.length - 1].x < sec) {
+                    ds.push({ x: sec, y: q.currentPrice });
+                } else {
+                    ds[ds.length - 1] = { x: sec, y: q.currentPrice };
+                }
+                chart.update('none');
+            }
+
+            curEl.textContent = fmt(q.currentPrice) + '원';
+            const chg = q.change || 0;
+            const sign = chg > 0 ? '+' : (chg < 0 ? '' : '');
+            const cls = chg > 0 ? 'up' : (chg < 0 ? 'down' : 'flat');
+            chgEl.className = 'h6 mb-0 ' + cls;
+            chgEl.textContent = sign + fmt(chg) + ' (' + sign + (q.changeRate || 0).toFixed(2) + '%)';
+
+            if (sec < OPEN_S) {
+                statusEl.textContent = '장 시작 전 (' + label + ') · 09:00부터 표시';
+            } else if (sec > CLOSE_S) {
+                statusEl.textContent = '장 마감 후 (' + label + ')';
+            } else {
+                statusEl.textContent = '마지막: ' + label;
+            }
+        } catch (e) {
+            statusEl.textContent = '갱신 실패 — 재시도 대기';
+        }
+    }
+
+    async function loadIntraday(code) {
+        try {
+            const res = await fetch('/api/stocks/' + code + '/intraday');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data || !data.points) return;
+            chart.data.datasets[0].data = data.points.map(p => ({ x: p.x, y: p.y }));
+            chart.update('none');
+        } catch (e) {}
+    }
+
+    function start(code, name, prev) {
+        currentCode = code;
+        prevClose = Number(prev) || 0;
+        titleEl.textContent = '📡 ' + name + ' (' + code + ') 실시간';
+        prevEl.textContent = prevClose > 0 ? fmt(prevClose) + '원' : '-';
+        curEl.textContent = '-';
+        chgEl.textContent = '-';
+        chgEl.className = 'h6 mb-0 flat';
+        statusEl.textContent = '일중 시세 로딩…';
+        buildChart();
+        loadIntraday(code).then(poll);
+        timer = setInterval(poll, POLL_MS);
+    }
+
+    function stop() {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (chart) { chart.destroy(); chart = null; }
+        currentCode = null;
+    }
+
+    document.querySelectorAll('.live-view-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const code = this.getAttribute('data-code');
+            const name = this.getAttribute('data-name');
+            const prev = this.getAttribute('data-prev');
+            start(code, name, prev);
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        });
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', stop);
 })();
 </script>
 </body>

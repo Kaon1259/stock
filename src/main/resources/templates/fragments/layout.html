@@ -67,6 +67,9 @@
                     <a class="nav-link" th:classappend="${active == 'picks'} ? 'active fw-bold' : ''" href="/picks">추천종목</a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" th:classappend="${active == 'realtime'} ? 'active fw-bold' : ''" href="/realtime">📡 실시간 차트</a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" th:classappend="${active == 'watchlist'} ? 'active fw-bold' : ''" href="/watchlist">관심종목 관리</a>
                 </li>
                 <li class="nav-item">

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('실시간 차트')}"></head>
+<body>
+<nav th:replace="~{fragments/layout :: nav(${active})}"></nav>
+
+<main class="container">
+    <div class="d-flex justify-content-between align-items-end mb-3">
+        <div>
+            <h2 class="mb-1">📡 실시간 차트</h2>
+            <div class="text-muted small">장 시간(09:00 ~ 15:30) 동안 5초마다 자동 갱신</div>
+        </div>
+        <div class="text-muted small text-end">
+            <div>마지막 갱신: <span id="rtLastUpdate">-</span></div>
+            <div>다음 갱신: <span id="rtNextUpdate">-</span>초 뒤</div>
+        </div>
+    </div>
+
+    <div th:if="${#lists.isEmpty(watchlist)}" class="card">
+        <div class="card-body text-center py-4">
+            <h5 class="text-muted mb-3">아직 등록된 관심 종목이 없어요</h5>
+            <a href="/watchlist" class="btn btn-primary">관심 종목 추가하기</a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div th:each="s : ${watchlist}" class="col-12 col-lg-6">
+            <div class="card stock-card rt-card" th:attr="data-code=${s.code}, data-name=${s.name}, data-prev=${s.previousClose}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <a th:href="@{'/stocks/' + ${s.code}}" class="text-decoration-none text-dark">
+                                <div class="fw-bold" style="font-size:1.05rem" th:text="${s.name}">종목명</div>
+                            </a>
+                            <div class="text-muted small">
+                                <span th:text="${s.code}"></span>
+                                <span th:if="${s.sector}" th:text="' · ' + ${s.sector}"></span>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-secondary" th:text="${s.market}">KOSPI</span>
+                            <span th:if="${s.type == 'ETF'}" class="badge bg-info ms-1">ETF</span>
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-4">
+                            <div class="text-muted small">전일 종가</div>
+                            <div class="rt-prev" th:text="${#numbers.formatInteger(s.previousClose, 3, 'COMMA')} + '원'">-</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-muted small">현재가</div>
+                            <div class="fw-bold rt-current">-</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-muted small">변동</div>
+                            <div class="rt-change flat">-</div>
+                        </div>
+                    </div>
+                    <div style="height: 220px; position: relative;">
+                        <canvas class="rt-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+
+<script th:if="${not #lists.isEmpty(watchlist)}">
+(function realtimeMulti() {
+    const POLL_MS = 5000;
+    const OPEN_S = 9 * 3600;
+    const CLOSE_S = 15 * 3600 + 30 * 60;
+
+    const charts = new Map();
+
+    function fmt(n) { return Number(n).toLocaleString('ko-KR'); }
+    function pad2(n) { return String(n).padStart(2, '0'); }
+    function fmtHM(s) {
+        s = Math.max(0, Math.floor(s));
+        return pad2(Math.floor(s / 3600)) + ':' + pad2(Math.floor((s % 3600) / 60));
+    }
+    function fmtHMS(s) {
+        s = Math.max(0, Math.floor(s));
+        return pad2(Math.floor(s / 3600)) + ':' + pad2(Math.floor((s % 3600) / 60)) + ':' + pad2(s % 60);
+    }
+    function secondsOfDay(d) {
+        return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+    }
+
+    function buildChart(canvas, prevClose) {
+        const datasets = [{
+            label: '현재가',
+            data: [],
+            borderColor: 'rgb(54, 162, 235)',
+            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+            tension: 0.25,
+            pointRadius: 1.5,
+            fill: true,
+            spanGaps: true
+        }];
+        if (prevClose > 0) {
+            datasets.push({
+                label: '전일 종가',
+                data: [
+                    { x: OPEN_S, y: prevClose },
+                    { x: CLOSE_S, y: prevClose }
+                ],
+                borderColor: 'rgba(150,150,150,0.7)',
+                borderDash: [6, 4],
+                pointRadius: 0,
+                fill: false
+            });
+        }
+        return new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: { datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'nearest', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: items => items.length ? fmtHMS(items[0].parsed.x) : '',
+                            label: ctx => ctx.dataset.label + ': ' + fmt(ctx.parsed.y) + '원'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        min: OPEN_S,
+                        max: CLOSE_S,
+                        ticks: {
+                            stepSize: 3600,
+                            callback: v => fmtHM(v),
+                            maxRotation: 0,
+                            autoSkip: false
+                        }
+                    },
+                    y: { ticks: { callback: v => fmt(v) + '원' } }
+                }
+            }
+        });
+    }
+
+    document.querySelectorAll('.rt-card').forEach(card => {
+        const code = card.getAttribute('data-code');
+        const prev = Number(card.getAttribute('data-prev')) || 0;
+        const canvas = card.querySelector('.rt-canvas');
+        const chart = buildChart(canvas, prev);
+        charts.set(code, {
+            chart,
+            prev,
+            curEl: card.querySelector('.rt-current'),
+            chgEl: card.querySelector('.rt-change')
+        });
+    });
+
+    async function loadIntraday() {
+        try {
+            const res = await fetch('/api/watchlist/intraday');
+            if (!res.ok) return;
+            const arr = await res.json();
+            (arr || []).forEach(item => {
+                const ref = charts.get(item.code);
+                if (!ref || !item.points) return;
+                ref.chart.data.datasets[0].data = item.points.map(p => ({ x: p.x, y: p.y }));
+                ref.chart.update('none');
+            });
+        } catch (e) {}
+    }
+
+    function applyQuote(q) {
+        const ref = charts.get(q.code);
+        if (!ref) return;
+        const sec = secondsOfDay(new Date());
+        if (sec >= OPEN_S && sec <= CLOSE_S && q.currentPrice > 0) {
+            const ds = ref.chart.data.datasets[0].data;
+            if (ds.length === 0 || ds[ds.length - 1].x < sec) {
+                ds.push({ x: sec, y: q.currentPrice });
+            } else {
+                ds[ds.length - 1] = { x: sec, y: q.currentPrice };
+            }
+            ref.chart.update('none');
+        }
+        ref.curEl.textContent = q.currentPrice > 0 ? fmt(q.currentPrice) + '원' : '-';
+        const chg = q.change || 0;
+        const sign = chg > 0 ? '+' : (chg < 0 ? '' : '');
+        ref.chgEl.className = 'rt-change ' + (chg > 0 ? 'up' : (chg < 0 ? 'down' : 'flat'));
+        ref.chgEl.textContent = sign + fmt(chg) + ' (' + sign + (q.changeRate || 0).toFixed(2) + '%)';
+    }
+
+    const lastEl = document.getElementById('rtLastUpdate');
+    const nextEl = document.getElementById('rtNextUpdate');
+    let nextTickAt = Date.now() + POLL_MS;
+
+    async function pollAll() {
+        try {
+            const res = await fetch('/api/watchlist/live');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const arr = await res.json();
+            (arr || []).forEach(applyQuote);
+            const now = new Date();
+            lastEl.textContent = fmtHMS(secondsOfDay(now));
+        } catch (e) {
+            lastEl.textContent = '실패';
+        } finally {
+            nextTickAt = Date.now() + POLL_MS;
+        }
+    }
+
+    loadIntraday().then(pollAll);
+    setInterval(pollAll, POLL_MS);
+    setInterval(() => {
+        const remain = Math.max(0, Math.ceil((nextTickAt - Date.now()) / 1000));
+        nextEl.textContent = remain;
+    }, 250);
+})();
+</script>
+</body>
+</html>
