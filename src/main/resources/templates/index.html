@@ -22,7 +22,7 @@
 
     <div class="row g-2">
         <div th:each="s : ${watchlist}" class="col-12 col-md-6">
-            <div class="card stock-card">
+            <div class="card stock-card js-stock-card" th:attr="data-code=${s.code}">
                 <a th:href="@{'/stocks/' + ${s.code}}" class="text-decoration-none text-dark">
                     <div class="card-body py-3 pb-2">
                         <div class="d-flex justify-content-between align-items-start">
@@ -39,14 +39,14 @@
                             </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-end mt-2">
-                            <div class="price-large" th:text="${#numbers.formatInteger(s.currentPrice, 3, 'COMMA')} + '원'">0원</div>
-                            <div th:class="'change-large ' + ${s.changeClass}">
+                            <div class="price-large js-price" th:text="${#numbers.formatInteger(s.currentPrice, 3, 'COMMA')} + '원'">0원</div>
+                            <div class="change-large js-change flat">
                                 <span th:text="${s.changeSign} + ${#numbers.formatInteger(s.change, 1, 'COMMA')}"></span>
                                 <span th:text="' (' + ${s.changeSign} + ${#numbers.formatDecimal(s.changeRate, 1, 2)} + '%)'"></span>
                             </div>
                         </div>
                         <div class="text-muted small mt-1">
-                            전일 종가 <span th:text="${#numbers.formatInteger(s.previousClose, 3, 'COMMA')} + '원'">0원</span>
+                            전일 종가 <span class="js-prev" th:text="${#numbers.formatInteger(s.previousClose, 3, 'COMMA')} + '원'">0원</span>
                         </div>
                         <div class="signal-badge mt-2" th:attr="data-code=${s.code}">
                             <div class="signal-loading">
@@ -103,6 +103,38 @@
 <footer th:replace="~{fragments/layout :: footer}"></footer>
 
 <script>
+(async function refreshWatchlistLive() {
+    const cards = document.querySelectorAll('.js-stock-card');
+    if (cards.length === 0) return;
+    try {
+        const res = await fetch('/api/watchlist/live');
+        if (!res.ok) return;
+        const arr = await res.json();
+        const map = {};
+        (arr || []).forEach(q => map[q.code] = q);
+        cards.forEach(card => {
+            const code = card.getAttribute('data-code');
+            const q = map[code];
+            if (!q || !q.currentPrice) return;
+            const fmt = n => Number(n).toLocaleString('ko-KR');
+            const priceEl = card.querySelector('.js-price');
+            const chgEl = card.querySelector('.js-change');
+            const prevEl = card.querySelector('.js-prev');
+            const btn = card.querySelector('.live-view-btn');
+            if (priceEl) priceEl.textContent = fmt(q.currentPrice) + '원';
+            if (prevEl) prevEl.textContent = fmt(q.previousClose) + '원';
+            if (btn) btn.setAttribute('data-prev', q.previousClose);
+            if (chgEl) {
+                const chg = q.change || 0;
+                const sign = chg > 0 ? '+' : (chg < 0 ? '' : '');
+                const cls = chg > 0 ? 'up' : (chg < 0 ? 'down' : 'flat');
+                chgEl.className = 'change-large js-change ' + cls;
+                chgEl.innerHTML = '<span>' + sign + fmt(chg) + '</span><span> (' + sign + (q.changeRate || 0).toFixed(2) + '%)</span>';
+            }
+        });
+    } catch (e) {}
+})();
+
 (async function loadWatchlistSignals() {
     const badges = document.querySelectorAll('.signal-badge');
     if (badges.length === 0) return;

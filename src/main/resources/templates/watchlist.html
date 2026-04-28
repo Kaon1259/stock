@@ -42,13 +42,13 @@
                         등록된 관심 종목이 없습니다.
                     </div>
                     <ul class="list-group list-group-flush">
-                        <li th:each="s : ${watchlist}" class="list-group-item d-flex justify-content-between align-items-center">
+                        <li th:each="s : ${watchlist}" class="list-group-item d-flex justify-content-between align-items-center js-stock-row" th:attr="data-code=${s.code}">
                             <div>
                                 <a th:href="@{'/stocks/' + ${s.code}}" class="text-decoration-none fw-bold" th:text="${s.name}">종목</a>
                                 <span class="text-muted small" th:text="' (' + ${s.code} + ')'"></span>
-                                <div th:class="'small ' + ${s.changeClass}">
-                                    <span th:text="${#numbers.formatInteger(s.currentPrice, 3, 'COMMA')} + '원'"></span>
-                                    <span th:text="' ' + ${s.changeSign} + ${#numbers.formatDecimal(s.changeRate, 1, 2)} + '%'"></span>
+                                <div class="small js-line flat">
+                                    <span class="js-price" th:text="${#numbers.formatInteger(s.currentPrice, 3, 'COMMA')} + '원'"></span>
+                                    <span class="js-rate" th:text="' ' + ${s.changeSign} + ${#numbers.formatDecimal(s.changeRate, 1, 2)} + '%'"></span>
                                 </div>
                             </div>
                             <form method="post" action="/watchlist/remove">
@@ -64,5 +64,34 @@
 </main>
 
 <footer th:replace="~{fragments/layout :: footer}"></footer>
+
+<script>
+(async function refreshWatchlistLive() {
+    const rows = document.querySelectorAll('.js-stock-row');
+    if (rows.length === 0) return;
+    try {
+        const res = await fetch('/api/watchlist/live');
+        if (!res.ok) return;
+        const arr = await res.json();
+        const map = {};
+        (arr || []).forEach(q => map[q.code] = q);
+        rows.forEach(row => {
+            const code = row.getAttribute('data-code');
+            const q = map[code];
+            if (!q || !q.currentPrice) return;
+            const fmt = n => Number(n).toLocaleString('ko-KR');
+            const priceEl = row.querySelector('.js-price');
+            const rateEl = row.querySelector('.js-rate');
+            const lineEl = row.querySelector('.js-line');
+            if (priceEl) priceEl.textContent = fmt(q.currentPrice) + '원';
+            const chg = q.change || 0;
+            const sign = chg > 0 ? '+' : (chg < 0 ? '' : '');
+            const cls = chg > 0 ? 'up' : (chg < 0 ? 'down' : 'flat');
+            if (rateEl) rateEl.textContent = ' ' + sign + (q.changeRate || 0).toFixed(2) + '%';
+            if (lineEl) lineEl.className = 'small js-line ' + cls;
+        });
+    } catch (e) {}
+})();
+</script>
 </body>
 </html>
