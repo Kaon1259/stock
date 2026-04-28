@@ -95,7 +95,7 @@ public class NaverFinanceClient {
             }
             JsonNode dealTrend = root.path("dealTrendInfos").path(0);
             if (!dealTrend.isMissingNode()) {
-                currentPrice = dealTrend.path("closePrice").asLong(0);
+                currentPrice = parseLong(dealTrend.path("closePrice").asText(""));
             }
             if (currentPrice == 0) {
                 JsonNode close = findInfo(totalInfos, "closePrice");
