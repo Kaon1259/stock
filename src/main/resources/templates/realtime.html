@@ -157,7 +157,8 @@
             chart,
             prev,
             curEl: card.querySelector('.rt-current'),
-            chgEl: card.querySelector('.rt-change')
+            chgEl: card.querySelector('.rt-change'),
+            prevEl: card.querySelector('.rt-prev')
         });
     });
 
@@ -186,8 +187,20 @@
             } else {
                 ds[ds.length - 1] = { x: sec, y: q.currentPrice };
             }
-            ref.chart.update('none');
         }
+        if (q.previousClose > 0 && q.previousClose !== ref.prev) {
+            ref.prev = q.previousClose;
+            if (ref.prevEl) ref.prevEl.textContent = fmt(q.previousClose) + '원';
+            if (ref.chart.data.datasets.length > 1) {
+                ref.chart.data.datasets[1].data = [
+                    { x: OPEN_S, y: q.previousClose },
+                    { x: CLOSE_S, y: q.previousClose }
+                ];
+            }
+        } else if (q.previousClose > 0 && ref.prevEl && !ref.prevEl.textContent.includes('원')) {
+            ref.prevEl.textContent = fmt(q.previousClose) + '원';
+        }
+        ref.chart.update('none');
         ref.curEl.textContent = q.currentPrice > 0 ? fmt(q.currentPrice) + '원' : '-';
         const chg = q.change || 0;
         const sign = chg > 0 ? '+' : (chg < 0 ? '' : '');

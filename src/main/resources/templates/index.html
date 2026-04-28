@@ -284,8 +284,18 @@
                 } else {
                     ds[ds.length - 1] = { x: sec, y: q.currentPrice };
                 }
-                chart.update('none');
             }
+            if (q.previousClose > 0 && q.previousClose !== prevClose) {
+                prevClose = q.previousClose;
+                prevEl.textContent = fmt(prevClose) + '원';
+                if (chart.data.datasets.length > 1) {
+                    chart.data.datasets[1].data = [
+                        { x: OPEN_S, y: prevClose },
+                        { x: CLOSE_S, y: prevClose }
+                    ];
+                }
+            }
+            chart.update('none');
 
             curEl.textContent = fmt(q.currentPrice) + '원';
             const chg = q.change || 0;
